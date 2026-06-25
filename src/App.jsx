@@ -335,37 +335,46 @@ function ErrorInput({ section }) {
         // Thêm dòng này để cắt bỏ phần đầu "data:image/png;base64," đi
         const pureBase64 = b64WithHeader.split(',')[1];
         try {
-          const res = await fetch("https://api.anthropic.com/v1/messages", {
-  method: "POST", 
-  headers: {
-    "Content-Type": "application/json",
-    "x-api-key": import.meta.env.VITE_ANTHROPIC_KEY,
-    "anthropic-version": "2023-06-01",
-    "anthropic-dangerous-direct-browser-access": "true"
-  },
-            body: JSON.stringify({
-              model:"claude-3-5-sonnet-20241022", max_tokens:1500,
-              messages:[{ role:"user", content:[
-                { type:"image", source:{ type:"base64", media_type:file.type, data: pureBase64 } },
-                { type:"text", text:`This is a SAT ${isMath ? "Math" : "Reading & Writing"} question screenshot.
-${isMath
-  ? `Determine format: "mcq" (has A B C D options) or "fill" (empty answer box, no options).`
-  : `Format is always "mcq" (Reading & Writing is always multiple choice).`}
-Return ONLY pure JSON (no markdown):
-{
-  "format": "${isMath ? 'mcq or fill' : 'mcq'}",
-  "question_type": "the skill/category tested",
-  "passage": "full passage, stimulus, or given context (all text before the question)",
-  "question_prompt": "the direct question being asked",
-  "options": { "A": "...", "B": "...", "C": "...", "D": "..." }
-}
-${isMath ? "For fill-in, set options to null." : "Always include all four options."}` }
-              ]}]
-            })
-          });
-          const data = await res.json();
-          const raw  = (data.content||[]).map(c=>c.text||"").join("").replace(/```json|```/g,"").trim();
-          const parsed = JSON.parse(raw);
+          // Gọi trực tiếp đến model Gemini 2.5 Flash đọc ảnh siêu nhanh và miễn phí
+          const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${import.meta.env.VITE_GEMINI_KEY}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                {
+                  text: `This is a SAT ${isMath ? "Math" : "Reading & Writing"} question screenshot.
+                  Analyze the format and text, then extract it into the following pure JSON structure. 
+                  Return ONLY the JSON object, absolutely no markdown text formatting, no \`\`\`json wrappers:
+                  {
+                    "format": "${isMath ? 'mcq or fill' : 'mcq'}",
+                    "question_type": "the skill/category tested",
+                    "passage": "full passage, stimulus, or given context (all text before the question)",
+                    "question_prompt": "the direct question being asked",
+                    "options": { "A": "...", "B": "...", "C": "...", "D": "..." }
+                  }
+                  ${isMath ? "For fill-in, set options to null." : "Always include all four options."}`
+                },
+                {
+                  inlineData: {
+                    mimeType: "image/png",
+                    data: pureBase64
+                  }
+                }
+              ]
+            }],
+            generationConfig: {
+              responseMimeType: "application/json"
+            }
+          })
+        });
+
+        const data = await res.json();
+        // Lấy chuỗi text JSON trả về từ cấu trúc dữ liệu của Gemini
+        const raw = data.candidates[0].content.parts[0].text.trim();
+        const parsed = JSON.parse(raw);
           if (isMath && parsed.format === "fill") setQFormat("fill");
           else setQFormat("mcq");
           if (parsed.question_type) {
