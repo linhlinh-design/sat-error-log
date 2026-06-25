@@ -328,9 +328,12 @@ function ErrorInput({ section }) {
       if (items[i].type.startsWith("image/")) {
         e.preventDefault();
         const file = items[i].getAsFile(); if (!file) return;
-        const b64 = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result.split(",")[1]); r.readAsDataURL(file); });
-        setScannedImg(`data:${file.type};base64,${b64}`);
+        const b64WithHeader = await new Promise(res => { const r = new FileReader(); r.onload = ev => res(ev.target.result); r.readAsDataURL(file); });
+        setScannedImg(b64WithHeader);
         setScanning(true);
+        
+        // Thêm dòng này để cắt bỏ phần đầu "data:image/png;base64," đi
+        const pureBase64 = b64WithHeader.split(',')[1];
         try {
           const res = await fetch("https://api.anthropic.com/v1/messages", {
   method: "POST", 
@@ -341,9 +344,9 @@ function ErrorInput({ section }) {
     "anthropic-dangerous-direct-browser-access": "true"
   },
             body: JSON.stringify({
-              model:"claude-sonnet-4-20250514", max_tokens:1500,
+              model:"claude-3-5-sonnet-20241022", max_tokens:1500,
               messages:[{ role:"user", content:[
-                { type:"image", source:{ type:"base64", media_type:file.type, data:b64 } },
+                { type:"image", source:{ type:"base64", media_type:file.type, data: pureBase64 } },
                 { type:"text", text:`This is a SAT ${isMath ? "Math" : "Reading & Writing"} question screenshot.
 ${isMath
   ? `Determine format: "mcq" (has A B C D options) or "fill" (empty answer box, no options).`
